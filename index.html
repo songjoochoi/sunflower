@@ -1,0 +1,2327 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>해바라기</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=Dongle&family=Grandiflora+One&family=Kirang+Haerang&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.3/p5.min.js"></script>
+  <style>
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    /* ── 스크롤 부드럽게 + 씬 스냅 ── */
+    html {
+      scroll-snap-type: y mandatory;
+    }
+
+    /* 상단 진행 바 */
+    #progress-bar {
+      position: fixed;
+      top: 0; left: 0;
+      height: 3px;
+      width: 0%;
+      background: linear-gradient(90deg, #ffe000, #ffb800, #ff6600);
+      z-index: 9999;
+      transition: width 0.08s linear;
+      pointer-events: none;
+    }
+
+    body {
+      font-family: 'Dongle', sans-serif;
+      color: #2e1a00;
+      overflow-x: hidden;
+    }
+
+    /* p5 캔버스 — 고정 배경 */
+    #p5-canvas {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+
+    /* ══════════════════════════════
+       메인 타이틀
+    ══════════════════════════════ */
+    #main {
+      position: relative;
+      z-index: 10;
+      height: 100vh;
+      overflow: hidden;
+      scroll-snap-align: start;
+      scroll-snap-stop: always;
+    }
+
+    /* 타이틀.png — 화면 꽉 채우기
+       흰 배경 PNG → multiply 로 흰색 날리고 노란 p5 배경에 녹아듦 */
+    .main-title-img {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;       /* 화면 꽉 채우기, 비율에 따라 약간 잘릴 수 있음 */
+      object-position: center;
+      mix-blend-mode: multiply;
+      pointer-events: none;
+      opacity: 0;
+      transform: scale(0.97);
+      transition: opacity 1.0s ease, transform 1.0s cubic-bezier(0.34, 1.2, 0.64, 1);
+    }
+
+    .main-title-img.show {
+      opacity: 1;
+      transform: scale(1);
+      /* 살짝 숨쉬는 느낌 */
+      animation: titleBreathe 7s ease-in-out infinite 1s;
+    }
+
+    @keyframes titleBreathe {
+      0%, 100% { transform: scale(1.0); }
+      50%       { transform: scale(1.018); }
+    }
+
+    /* 스크롤 힌트 */
+    .scroll-hint {
+      position: absolute;
+      bottom: 36px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      z-index: 20;
+      opacity: 0;
+      transition: opacity 0.8s ease 1.6s;
+      animation: bob 2.2s ease-in-out infinite;
+    }
+
+    .scroll-hint.show { opacity: 0.5; }
+
+    .scroll-hint span {
+      font-family: 'Dongle', sans-serif;
+      font-size: 13px;
+      letter-spacing: 0.3em;
+      color: #2e1a00;
+    }
+
+    @keyframes bob {
+      0%, 100% { transform: translateX(-50%) translateY(0); }
+      50%       { transform: translateX(-50%) translateY(9px); }
+    }
+
+
+    /* ══════════════════════════════
+       스토리 영역
+    ══════════════════════════════ */
+    #story {
+      position: relative;
+      z-index: 10;
+    }
+
+    /* 씬 — 한 장면 = 한 화면 */
+    .scene {
+      width: 100%;
+      height: 100vh;
+      position: relative;
+      background: #F9F3A6;
+      opacity: 0;
+      transition: opacity 0.5s ease;
+      scroll-snap-align: start;
+      scroll-snap-stop: always;
+    }
+
+    .scene.visible { opacity: 1; }
+
+    /* 씬 이미지 — 화면 꽉 채우기 */
+    .scene img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    /* 수업1 씬 이미지 — contain 강제 (.scene img 뒤에 선언해야 덮어씌워짐) */
+    #classImg {
+      object-fit: contain !important;
+      background: #fff;
+    }
+
+    /* 배경 이미지 (절대 위치) */
+    .scene .scene-bg {
+      position: absolute;
+      top: 0; left: 0;
+    }
+
+    /* 해바라기 오버레이 — screen으로 검정 배경 날리기
+       filter로 채도+대비 올려서 노란 배경에서도 선명하게 */
+    .scene .scene-flowers {
+      position: absolute;
+      top: 0; left: 0;
+      mix-blend-mode: screen;
+      filter: saturate(4) contrast(2);
+      pointer-events: none;
+      z-index: 2;
+      opacity: 0;
+      transition: opacity 0.6s ease 0.35s;
+    }
+
+    .scene.visible .scene-flowers {
+      opacity: 1;
+      animation: sceneFlowersFloat 6.5s ease-in-out infinite;
+    }
+
+    /* 배경이랑 살짝 다른 타이밍으로 float → 레이어 깊이감 */
+    @keyframes sceneFlowersFloat {
+      0%, 100% { transform: translateY(0px) scale(1.0); }
+      40%       { transform: translateY(-10px) scale(1.012); }
+      70%       { transform: translateY(5px) scale(0.992); }
+    }
+
+    /* 이미지 없는 더미 씬 */
+    .scene-dummy {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-top: 1px solid rgba(46,26,0,0.05);
+    }
+
+    .scene-dummy span {
+      font-family: 'Dongle', sans-serif;
+      font-size: 15px;
+      color: #2e1a00;
+      opacity: 0.18;
+      letter-spacing: 0.12em;
+    }
+
+
+    /* ══════════════════════════════
+       인포그래픽 섹션
+    ══════════════════════════════ */
+    .infographic-wrap {
+      position: relative;
+      width: 100%;
+      height: 100vh;
+      overflow: hidden;
+      background: #f5a800;
+      scroll-snap-align: start;
+      scroll-snap-stop: always;
+    }
+
+    .infographic-wrap img.bg {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      object-position: left top;
+      display: block;
+    }
+
+    /* 태양이 캐릭터
+       첫 번째 이미지 기준: 왼쪽 주황 구역, "태양" 글자 아래 */
+    .char-sun {
+      position: absolute;
+      bottom: 0%;
+      left: 0%;
+      width: 19%;
+      opacity: 0;
+      transform: translateY(50px);
+      transition: opacity 0.9s ease, transform 1s cubic-bezier(0.34, 1.4, 0.64, 1);
+      z-index: 20;
+      filter: drop-shadow(6px 12px 16px rgba(0,0,0,0.25));
+    }
+
+    .char-sun.show {
+      opacity: 1;
+      transform: translateY(0);
+      animation: sunFloat 3.4s ease-in-out infinite;
+    }
+
+    @keyframes sunFloat {
+      0%, 100% { transform: translateY(0px)  rotate(-1deg); }
+      50%       { transform: translateY(-14px) rotate(1deg); }
+    }
+
+
+    /* ══════════════════════════════
+       시계 씬 — p5 노란 배경+해바라기 위에 아침.png 올림
+    ══════════════════════════════ */
+    .clock-scene {
+      background: #1a1a2e;
+      overflow: hidden;
+    }
+
+    /* 시계 이미지 — 1920×1080 기준 정중앙 */
+    .clock-img {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -52%) scale(0.8);
+      height: 70vh;
+      width: auto;
+      mix-blend-mode: screen;
+      opacity: 0;
+      pointer-events: none;
+      margin: 0;
+    }
+
+    /* visible 시 등장만 — 진동은 클릭 후 */
+    .clock-scene.visible .clock-img {
+      animation: clockAppear 0.8s cubic-bezier(0.34, 1.3, 0.64, 1) 0.4s forwards;
+    }
+
+    /* 클릭 시 진동 시작 */
+    .clock-img.shake {
+      opacity: 1;
+      animation:
+        clockShake 0.11s ease-in-out 0s 16 alternate,
+        clockStop  0.5s ease 1.8s forwards !important;
+    }
+
+    @keyframes clockAppear {
+      from { opacity: 0; transform: translate(-50%, -52%) scale(0.8); }
+      to   { opacity: 1; transform: translate(-50%, -52%) scale(1); }
+    }
+
+    /* 아침 시계 — 크기/위치 고정 */
+    #clockImg {
+      transform: translate(-50%, -52%) scale(0.75) !important;
+    }
+
+    @keyframes clockShake {
+      from { transform: translate(-50%, -52%) rotate(-9deg); }
+      to   { transform: translate(-50%, -52%) rotate(9deg); }
+    }
+
+    @keyframes clockStop {
+      to { transform: translate(-50%, -52%) rotate(0deg); }
+    }
+
+    /* ══════════════════════════════
+       아침 씬 레이아웃
+    ══════════════════════════════ */
+    .morning-scene {
+      background: #fff;
+    }
+
+    /* 텍스트 이미지 — 상단 중앙 */
+    .morning-text {
+      position: absolute;
+      top: 6%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 65%;
+      pointer-events: none;
+    }
+
+    /* 태양이 — 하단 중앙, screen으로 검정 배경 날리기 */
+    .morning-char {
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-44%);
+      height: 60%;
+      pointer-events: none;
+    }
+
+    /* 찌릿 공통 */
+    .morning-zap {
+      position: absolute;
+      pointer-events: none;
+    }
+
+    /* 큰 찌릿 — 태양이 왼쪽 눈 위 */
+    .big-zap {
+      left: 23%;
+      top: 44%;
+      width: 13%;
+      animation: zapBurst 0.25s ease-in-out infinite;
+    }
+
+    /* 작은 찌릿 — 태양이 오른쪽 */
+    .small-zap {
+      left: 62%;
+      top: 52%;
+      width: 7%;
+      animation: zapBurst 0.25s ease-in-out infinite 0.12s;
+    }
+
+    /* 진짜 찌릿한 느낌 — 크기+회전 교번 */
+    @keyframes zapBurst {
+      0%   { transform: scale(1)   rotate(0deg);   opacity: 1; }
+      30%  { transform: scale(1.5) rotate(25deg);  opacity: 0.6; }
+      60%  { transform: scale(0.7) rotate(-15deg); opacity: 1; }
+      100% { transform: scale(1.2) rotate(10deg);  opacity: 0.8; }
+    }
+
+    /* 말풍선 — 태양이 왼쪽 */
+    .morning-bubble {
+      position: absolute;
+      left: 20%;
+      top: 38%;
+      width: 17%;
+      opacity: 0;
+      transform: scale(0.7);
+      transition: opacity 0.4s ease 0.2s, transform 0.4s cubic-bezier(0.34, 1.5, 0.64, 1) 0.2s;
+      pointer-events: none;
+    }
+
+    .scene.visible .morning-bubble {
+      opacity: 1;
+      transform: scale(1);
+    }
+    .eye-scene {
+      background: #000 !important;
+      overflow: hidden;
+    }
+
+    /* 세 이미지 겹쳐서 쌓기 */
+    .eye-img {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      mix-blend-mode: screen; /* 검정 배경 날리기, 눈만 선명하게 */
+      opacity: 0;
+      transition: opacity 0.6s ease;
+      pointer-events: none;
+    }
+
+    /* 아침 sticky 씬 */
+    .morning-sticky-container {
+      position: relative;
+      height: 300vh;
+      scroll-snap-align: start;
+      scroll-snap-stop: always;
+    }
+
+    .morning-sticky {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow: hidden;
+      background: #fff;
+    }
+
+    .morning-frame {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      opacity: 0;
+      transition: opacity 0.35s ease, filter 1.4s ease;
+    }
+
+    .morning-frame.active { opacity: 1; }
+
+
+
+    /* 두 번째 장면 — 불안이 올라오는 불규칙 떨림 */
+    #morningFrame2.active {
+      animation: morningAnxiety 2.4s ease-in-out infinite;
+    }
+
+    @keyframes morningAnxiety {
+      /* 시작: 정상 */
+      0%   { transform: translate(0px, 0px) scale(1); }
+
+      /* 1차 떨림 — 감각이 올라옴 */
+      8%   { transform: translate(-4px, -2px) scale(1.012); }
+      10%  { transform: translate( 4px,  2px) scale(1.012); }
+      12%  { transform: translate(-3px,  2px) scale(1.012); }
+      14%  { transform: translate( 3px, -2px) scale(1.012); }
+
+      /* 잠깐 멈춤 — 억누르려는 순간 */
+      26%  { transform: translate(0px, 0px) scale(1.018); }
+
+      /* 2차 떨림 — 더 강하게 올라옴 */
+      34%  { transform: translate(-5px, -3px) scale(1.02); }
+      36%  { transform: translate( 5px,  3px) scale(1.02); }
+      38%  { transform: translate(-4px,  3px) scale(1.02); }
+      40%  { transform: translate( 4px, -3px) scale(1.02); }
+
+      /* 다시 멈춤 */
+      55%  { transform: translate(0px, 0px) scale(1.01); }
+
+      /* 3차 — 약하게 잦아듦 */
+      62%  { transform: translate(-2px, -1px) scale(1.008); }
+      64%  { transform: translate( 2px,  1px) scale(1.008); }
+
+      /* 끝: 다시 정상으로 */
+      100% { transform: translate(0px, 0px) scale(1); }
+    }
+
+
+    /* 아침밥 사이렌 오버레이 */
+    .siren-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      box-shadow: inset 0 0 0px rgba(255,0,0,0);
+    }
+
+    .siren-overlay.show {
+      opacity: 1;
+      animation: sirenPulse 0.7s ease-in-out infinite;
+    }
+
+    @keyframes sirenPulse {
+      0%, 100% { box-shadow: inset 0 0 120px rgba(255,0,0,0.15); }
+      50%       { box-shadow: inset 0 0 260px rgba(255,0,0,0.60); }
+    }
+
+
+    /* 시계 클릭 유도 */
+    .clock-img { cursor: pointer; }
+
+    .clock-hint {
+      position: absolute;
+      bottom: 3%;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #ffffff;
+      font-family: 'Dongle', sans-serif;
+      font-size: 64px;
+      letter-spacing: 0.25em;
+      opacity: 0;
+      transition: opacity 0.6s ease;
+      pointer-events: none;
+      animation: hintBob 1.6s ease-in-out infinite;
+      white-space: nowrap;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+
+    .clock-hint.show { opacity: 1; }
+
+    @keyframes hintBob {
+      0%, 100% { transform: translateX(-50%) translateY(0px); }
+      50%       { transform: translateX(-50%) translateY(-7px); }
+    }
+
+
+    /* 짐싸기 패닝 */
+    .packing-container {
+      position: relative;
+      height: 400vh;
+    }
+
+    .packing-sticky {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow: hidden;
+      background: #fff;
+    }
+
+    .packing-img {
+      position: absolute;
+      height: 65%;
+      width: auto;
+      top: 50%;
+      left: 0;
+      transform: translateY(-50%) translateX(0px);
+      will-change: transform;
+    }
+
+    /* 다급한 사이렌 — 기존보다 빠르고 강하게 */
+    .urgent-siren {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+
+    .urgent-siren.show {
+      opacity: 1;
+      animation: urgentPulse 0.4s ease-in-out infinite;
+    }
+
+    @keyframes urgentPulse {
+      0%, 100% {
+        box-shadow: inset 0 0 80px rgba(255,0,0,0.08);
+        background: rgba(255,0,0,0);
+      }
+      50% {
+        box-shadow: inset 0 0 280px rgba(255,0,0,0.80);
+        background: rgba(255,0,0,0.12);
+      }
+    }
+
+
+    /* 걷기 씬 힌트 */
+    .walking-hint {
+      position: absolute;
+      bottom: 3%;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #1a1a1a;
+      font-family: 'Dongle', sans-serif;
+      font-size: 60px;
+      letter-spacing: 0.15em;
+      white-space: nowrap;
+      opacity: 0;
+      transition: opacity 0.6s ease;
+      pointer-events: none;
+      animation: hintBob 1.6s ease-in-out infinite;
+    }
+
+    .walking-hint.show { opacity: 1; }
+
+
+    /* 엘리베이터 오버레이 */
+    .elevator-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      transition: none;
+    }
+
+
+    /* 공사 사이렌 */
+    .construction-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      animation: constructionPulse 0.7s ease-in-out infinite;
+      opacity: 0;
+    }
+
+    @keyframes constructionPulse {
+      0%, 100% {
+        box-shadow: inset 0 0 80px rgba(220, 60, 0, 0.1);
+        background: rgba(220, 60, 0, 0);
+      }
+      50% {
+        box-shadow: inset 0 0 300px rgba(220, 60, 0, 0.85);
+        background: rgba(180, 20, 0, 0.15);
+      }
+    }
+
+
+    /* 밤 가방 주황 사이렌 */
+    @keyframes nightOrangePulse {
+      0%, 100% {
+        box-shadow: inset 0 0 100px rgba(255, 120, 0, 0.15);
+        background: rgba(255, 120, 0, 0);
+      }
+      50% {
+        box-shadow: inset 0 0 320px rgba(255, 120, 0, 0.80);
+        background: rgba(255, 100, 0, 0.18);
+      }
+    }
+
+    /* 빨강↔노랑 극단 교번 사이렌 */
+    .panic-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.4s ease;
+    }
+
+    .panic-overlay.show {
+      opacity: 1;
+      animation: panicSiren 1.1s ease-in-out infinite;
+    }
+
+    @keyframes panicSiren {
+      0%   { box-shadow: inset 0 0 320px rgba(255,0,0,0.75);   background: rgba(255,0,0,0.13); }
+      18%  { box-shadow: inset 0 0 60px  rgba(255,0,0,0.04);   background: rgba(0,0,0,0); }
+      28%  { box-shadow: inset 0 0 320px rgba(255,210,0,0.75); background: rgba(255,210,0,0.13); }
+      46%  { box-shadow: inset 0 0 60px  rgba(255,210,0,0.04); background: rgba(0,0,0,0); }
+      54%  { box-shadow: inset 0 0 320px rgba(255,0,0,0.90);   background: rgba(255,0,0,0.16); }
+      66%  { box-shadow: inset 0 0 30px  rgba(255,0,0,0.02);   background: rgba(0,0,0,0); }
+      76%  { box-shadow: inset 0 0 320px rgba(255,210,0,0.90); background: rgba(255,210,0,0.16); }
+      90%  { box-shadow: inset 0 0 30px  rgba(255,210,0,0.02); background: rgba(0,0,0,0); }
+      100% { box-shadow: inset 0 0 320px rgba(255,0,0,0.75);   background: rgba(255,0,0,0.13); }
+    }
+
+    /* 태양이 힌트 */
+    .tayang-hint {
+      position: absolute;
+      bottom: 3%;
+      left: 50%;
+      transform: translateX(-50%);
+      font-family: 'Dongle', sans-serif;
+      font-size: 60px;
+
+    /* 태양이 클릭 영역 */
+    .tayang-click {
+      position: absolute;
+      left: 38%; top: 15%;
+      width: 38%; height: 82%;
+      cursor: pointer;
+      z-index: 10;
+    }
+
+
+    /* 수업 씬 힌트 */
+    .class-hint {
+      position: absolute;
+      bottom: 3%;
+      left: 50%;
+      transform: translateX(-50%);
+      font-family: 'Dongle', sans-serif;
+      font-size: 60px;
+      color: #1a1a1a;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.6s ease;
+      animation: hintBob 1.6s ease-in-out infinite;
+    }
+
+    .class-hint.show { opacity: 1; }
+
+
+    /* 노란 깜빡 (class1) */
+    .class-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      animation: yellowFlash 0.6s ease-in-out infinite;
+      opacity: 0.85;
+    }
+
+    @keyframes yellowFlash {
+      0%, 100% { box-shadow: inset 0 0 200px rgba(255,220,0,0.1); background: rgba(255,220,0,0); }
+      50%       { box-shadow: inset 0 0 320px rgba(255,220,0,0.70); background: rgba(255,220,0,0.1); }
+    }
+
+    /* 노랑→빨강 사이렌 (class3~4) */
+    .class34-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+  </style>
+</head>
+<body>
+
+<!-- 상단 진행 바 -->
+<div id="progress-bar"></div>
+
+<!-- p5 배경 캔버스 -->
+<div id="p5-canvas"></div>
+
+<!-- ── 메인 타이틀 ── -->
+<div id="main">
+  <img class="main-title-img" id="mainTitle" src="타이틀.png" alt="해바라기">
+
+  <div class="scroll-hint" id="scrollHint">
+    <span>SCROLL</span>
+    <svg width="14" height="20" viewBox="0 0 14 20" fill="none">
+      <line x1="7" y1="0" x2="7" y2="14" stroke="#2e1a00" stroke-width="1.5" stroke-linecap="round"/>
+      <path d="M2 10l5 8 5-8" stroke="#2e1a00" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </div>
+</div>
+
+<!-- ── 스토리 ── -->
+<div id="story">
+
+  <!-- 프롤로그 -->
+  <div class="scene">
+    <img class="scene-bg" src="프롤로그.png" alt="프롤로그">
+    <img class="scene-flowers" src="프롤로그해바라기.png" alt="">
+  </div>
+
+  <!-- 시작하기 전에 -->
+  <div class="scene">
+    <img class="scene-bg" src="시작하기전에.png" alt="시작하기 전에">
+    <img class="scene-flowers" src="프롤로그해바라기.png" alt="">
+  </div>
+
+  <!-- 인포그래픽 -->
+  <div class="infographic-wrap">
+    <img class="bg" src="info.png" alt="인포그래픽">
+    <img class="char-sun" id="charSun" src="SUN.png" alt="태양이">
+  </div>
+
+  <!-- 시계 씬: 노란 배경+해바라기 위에 아침.png 등장 + 진동 -->
+  <!-- 시계 씬: 아침 시계 -->
+  <div class="scene clock-scene" id="clockScene" onclick="onClockClick()" style="cursor:pointer;">
+    <div id="clockDawn" style="
+      position:absolute; inset:0; z-index:2;
+      background: #000;
+      opacity:1;
+      transition: opacity 2s ease;
+      pointer-events:none;
+    "></div>
+    <img class="clock-img" id="clockImg" src="아침시계만.png" alt="시계">
+    <p class="clock-hint" id="clockHint">🔔 눌러보세요</p>
+  </div>
+
+  <!-- 눈 씬: 눈1(감음) → 눈2(반쯤) → 눈3(완전히) 차례로 뜸 -->
+  <div class="scene eye-scene" id="eyeScene">
+    <img class="eye-img" id="eye1" src="눈1.png" alt="">
+    <img class="eye-img" id="eye2" src="눈2.png" alt="">
+    <img class="eye-img" id="eye3" src="눈3.png" alt="">
+  </div>
+
+  <!-- 1. 기상: 아침 3장 sticky -->
+  <div class="morning-sticky-container" id="morningContainer">
+    <div class="morning-sticky">
+      <img class="morning-frame active" src="아침1.png" alt="">
+      <img class="morning-frame" src="아침2.png" alt="" id="morningFrame2">
+      <img class="morning-frame" src="아침3.png" alt="" id="morningFrame3">
+      <div class="siren-overlay" id="morningSiren"></div>
+    </div>
+  </div>
+
+  <!-- 2. 빨리 씻자 -->
+  <div class="scene" style="background:#fff;">
+    <img src="씻자.png" style="width:100%;height:100%;object-fit:contain;">
+  </div>
+
+  <!-- 3. 아침밥: 2장 sticky -->
+  <div class="morning-sticky-container" id="breakfastContainer">
+    <div class="morning-sticky">
+      <img class="morning-frame active" src="아침밥1.png" alt="">
+      <img class="morning-frame" src="아침밥2.png" alt="">
+      <div class="siren-overlay" id="sirenOverlay"></div>
+    </div>
+  </div>
+
+  <!-- 4. 짐싸기: 4장 sticky 전환 (gimbag1~4) -->
+  <div style="position:relative;height:400vh;scroll-snap-align:start;scroll-snap-stop:always;" id="packingContainer">
+    <div class="packing-sticky" style="background:#fff;">
+      <img class="morning-frame active" id="gimbagImg1" src="gimbag1.png" alt="" style="width:100%;height:100%;object-fit:contain;">
+      <img class="morning-frame"        id="gimbagImg2" src="gimbag2.png" alt="" style="width:100%;height:100%;object-fit:contain;">
+      <img class="morning-frame"        id="gimbagImg3" src="gimbag3.png" alt="" style="width:100%;height:100%;object-fit:contain;">
+      <img class="morning-frame"        id="gimbagImg4" src="gimbag4.png" alt="" style="width:100%;height:100%;object-fit:contain;">
+      <p class="tayang-hint show" id="gimbagHint" style="color:#1a1a1a; font-size:48px;">스크롤로 태양이의 가방을 챙겨보세요</p>
+    </div>
+  </div>
+
+  <!-- 5. 늦는 말풍선 + 다급한 사이렌 -->
+  <div class="scene" id="lateScene" style="background:#fff;">
+    <img src="늦는말풍선.png" style="width:100%;height:100%;object-fit:contain;">
+    <div class="urgent-siren" id="urgentSiren"></div>
+  </div>
+
+  <!-- 6. 엘리베이터: 2장 sticky 전환 + 빨강→노랑 사이렌 완화 -->
+  <div style="position:relative;height:200vh;scroll-snap-align:start;scroll-snap-stop:always;" id="elevatorContainer">
+    <div class="packing-sticky">
+      <img class="morning-frame active" id="elevatorImg" src="elev1.png" alt="엘리베이터" style="width:100%;height:100%;object-fit:contain;">
+      <img class="morning-frame"        id="elevatorImg2" src="elev2.png" alt="엘리베이터2" style="width:100%;height:100%;object-fit:contain;">
+      <div class="elevator-overlay" id="elevatorOverlay"></div>
+    </div>
+  </div>
+
+  <!-- 7. 걷기: 3장 sticky 전환 + 클릭 시 걷는 소리 -->
+  <div style="position:relative;height:300vh;scroll-snap-align:start;scroll-snap-stop:always;" id="walkingContainer">
+    <div class="packing-sticky" onclick="onWalkingClick()" style="cursor:pointer; background:#fff;">
+      <img class="morning-frame active" id="walkImg1" src="walk1.png" alt="걷기1" style="width:100%;height:100%;object-fit:contain;">
+      <img class="morning-frame"        id="walkImg2" src="walk2.png" alt="걷기2" style="width:100%;height:100%;object-fit:contain;">
+      <img class="morning-frame"        id="walkImg3" src="walk3.png" alt="걷기3" style="width:100%;height:100%;object-fit:contain;">
+      <p class="walking-hint" id="walkingHint">아무 곳이나 눌러보세요</p>
+    </div>
+  </div>
+
+  <!-- 공사: 3장 sticky 전환 + 주황→피빨강 사이렌 -->
+  <div style="position:relative;height:300vh;scroll-snap-align:start;scroll-snap-stop:always;" id="constructionContainer">
+    <div class="packing-sticky" style="background:#fff;">
+      <img class="morning-frame active" id="constImg1" src="공사1.png" alt="" style="width:100%;height:100%;object-fit:contain;">
+      <img class="morning-frame"        id="constImg2" src="공사2.png" alt="" style="width:100%;height:100%;object-fit:contain;">
+      <img class="morning-frame"        id="constImg3" src="공사3.png" alt="" style="width:100%;height:100%;object-fit:contain;">
+      <div class="construction-overlay" id="constructionOverlay"></div>
+    </div>
+  </div>
+
+  <!-- 등교 마지막: 빨강↔노랑 사이렌 + 태양이 클릭 시 심장박동 -->
+  <div class="scene" id="lastMorningScene" style="background:#fff; cursor:pointer;" onclick="onLastClick()">
+    <img src="last.png" style="width:100%;height:100%;object-fit:contain;">
+    <div class="panic-overlay" id="panicOverlay"></div>
+    <div class="tayang-click" onclick="onTayangClick()"></div>
+    <p class="tayang-hint" id="lastHint" style="color:#1a1a1a;">태양이를 눌러보세요</p>
+  </div>
+
+  <!-- 점심 -->
+  <!-- 점심 시계 씬 -->
+  <div class="scene clock-scene" id="lunchClockScene" onclick="onLunchClockClick()" style="cursor:pointer; background:#fff;">
+    <img class="clock-img" id="lunchClockImg" src="lunchclock.png" alt="점심 시계" style="mix-blend-mode:normal; opacity:1;">
+    <p class="clock-hint" id="lunchClockHint" style="color:#1a1a1a; text-shadow:none;">🔔 눌러보세요</p>
+  </div>
+
+  <!-- 짐풀기: 4장 sticky 전환 -->
+  <div style="position:relative;height:400vh;scroll-snap-align:start;scroll-snap-stop:always;" id="unpackContainer">
+    <div class="morning-sticky" style="background:#fff;">
+      <img class="morning-frame active" src="gim1.png" alt="">
+      <img class="morning-frame"        src="gim2.png" alt="">
+      <img class="morning-frame"        src="gim3.png" alt="">
+      <img class="morning-frame"        src="gim4.png" alt="">
+    </div>
+  </div>
+
+  <!-- 순서강박: 2장 sticky 전환 -->
+  <div style="position:relative;height:200vh;scroll-snap-align:start;scroll-snap-stop:always;" id="orderContainer">
+    <div class="morning-sticky" style="background:#fff;">
+      <img class="morning-frame active" src="order1.png" alt="">
+      <img class="morning-frame"        src="order2.png" alt="">
+    </div>
+  </div>
+
+  <!-- 수업 씬 1: 태양이 클릭 시 아이들 소리 -->
+  <div class="scene" id="classContainer" style="background:#fff; cursor:pointer; opacity:1;" onclick="onClassClick()">
+    <img id="classImg" src="class11진짜.png" style="width:100%;height:100%;object-fit:contain;display:block;position:relative;">
+    <div class="class-overlay"></div>
+    <p id="classHint" style="
+      position:absolute;
+      top:22%;
+      left:55%;
+      transform:translateX(-50%);
+      font-family:'Dongle',sans-serif;
+      font-size:60px;
+      color:#1a1a1a;
+      white-space:nowrap;
+      pointer-events:none;
+      opacity:0;
+      transition:opacity 0.6s ease;
+      animation:hintBob 1.6s ease-in-out infinite;
+    ">태양이를 눌러보세요</p>
+  </div>
+
+  <!-- 수업 씬 2: 음원 계속 재생 중 -->
+  <div class="scene" id="class2Scene" style="background:#fff;">
+    <img src="class22.png" style="width:100%;height:100%;object-fit:contain;">
+  </div>
+
+  <!-- 수업 씬 3+4: 2장 sticky, 노랑→빨강 불안 심화 -->
+  <div style="position:relative;height:200vh;scroll-snap-align:start;scroll-snap-stop:always;" id="class34Container">
+    <div class="morning-sticky" style="background:#fff;">
+      <img class="morning-frame active" src="class33.png" alt="">
+      <img class="morning-frame"        src="class3.png" alt="" id="class4Frame">
+      <div class="class34-overlay" id="class34Overlay"></div>
+    </div>
+  </div>
+
+  <!-- 밤 시계 씬 -->
+  <div class="scene clock-scene" id="nightClockScene" onclick="onNightClockClick()" style="cursor:pointer;">
+    <img class="clock-img" id="nightClockImg" src="NightClock.png" alt="밤 시계">
+    <p class="clock-hint" id="nightClockHint">🔔 눌러보세요</p>
+  </div>
+
+  <!-- 저녁식사: 2장 sticky 전환 -->
+  <div style="position:relative;height:200vh;scroll-snap-align:start;scroll-snap-stop:always;" id="dinnerContainer">
+    <div class="morning-sticky" style="background:#fff;">
+      <img class="morning-frame active" src="dinner1.png" alt="" style="object-fit:contain;transform:scale(1.25);transform-origin:center;">
+      <img class="morning-frame"        src="dinner2.png" alt="" style="object-fit:contain;transform:scale(1.25);transform-origin:center;">
+    </div>
+  </div>
+
+
+
+
+
+
+
+
+
+
+  <!-- TV 씬: TVtime.png + 클릭 시 television_playing.mp3 재생 -->
+  <div class="scene" id="tvScene" style="background:#fff; cursor:pointer;" onclick="onTVClick()">
+    <img src="TVtime.png" style="width:100%;height:100%;object-fit:contain;transform:scale(1.25) translateX(-8%);transform-origin:center;">
+    <p class="tayang-hint" id="tvHint" style="color:#ffffff; font-size:52px; left:58%;">TV를 눌러보세요</p>
+  </div>
+
+  <!-- 밤 가방 씬: NightBag 6장 sticky 전환 + 첫 진입 시 태양이 클릭으로 night_ambience 시작 -->
+  <div style="position:relative;height:600vh;scroll-snap-align:start;scroll-snap-stop:always;" id="nightBagContainer">
+    <div class="morning-sticky" style="background:#fff;">
+      <img class="morning-frame active" src="NightBag1.png" alt="" style="object-fit:contain;transform:scale(1.25);transform-origin:center;">
+      <img class="morning-frame"        src="NightBag2.png" alt="" style="object-fit:contain;transform:scale(1.25);transform-origin:center;">
+      <img class="morning-frame"        src="NightBag3.png" alt="" style="object-fit:contain;transform:scale(1.25);transform-origin:center;">
+      <img class="morning-frame"        src="NightBag4.png" alt="" style="object-fit:contain;transform:scale(1.25);transform-origin:center;">
+      <img class="morning-frame"        src="NightBag5.png" alt="" style="object-fit:contain;transform:scale(1.25);transform-origin:center;">
+      <img class="morning-frame"        src="NightBag6.png" alt="" style="object-fit:contain;transform:scale(1.25);transform-origin:center;">
+      <!-- NightBag6 진한 주황 사이렌 -->
+      <div id="nightBagSiren" style="
+        position:absolute; inset:0; pointer-events:none;
+        opacity:0; transition:opacity 0.3s ease;
+        animation:nightOrangePulse 0.6s ease-in-out infinite;
+      "></div>
+      <!-- 태양이 클릭 자막 + 클릭 영역 -->
+      <p class="tayang-hint" id="nightBagHint" style="color:#1a1a1a; font-size:48px; opacity:0;">태양이를 눌러보세요</p>
+      <div style="position:absolute;inset:0;cursor:pointer;z-index:10;" onclick="onNightBagClick()"></div>
+    </div>
+  </div>
+
+  <!-- 수면 씬: Sleep 2장 sticky 전환 + 여기서 night_ambience 종료 -->
+  <div style="position:relative;height:300vh;scroll-snap-align:start;scroll-snap-stop:always;" id="sleepContainer">
+    <div class="morning-sticky" style="background:#fff;">
+      <img class="morning-frame active" src="Sleep1.png" alt="" style="object-fit:contain;transform:scale(1.25);transform-origin:center;">
+      <img class="morning-frame"        src="Sleep2.png" alt="" style="object-fit:contain;transform:scale(1.25);transform-origin:center;">
+      <img class="morning-frame"        src="Sleep3.png" alt="" style="object-fit:contain;transform:scale(1.25);transform-origin:center;">
+      <!-- Sleep3 p5.js 해바라기 꿈나라 overlay -->
+      <div id="sleepDreamCanvas" style="
+        position:absolute; inset:0;
+        width:100%; height:100%;
+        pointer-events:none;
+        opacity:0;
+        transition:opacity 1.5s ease;
+        z-index:5;
+      "></div>
+    </div>
+  </div>
+
+  <!-- 눈 감는 씬: 눈3(뜸) → 눈2(반쯤) → 눈1(감음) — 잠드는 연출 -->
+  <div class="scene eye-scene" id="eyeCloseScene">
+    <img class="eye-img" id="eyeClose3" src="눈3.png" alt="">
+    <img class="eye-img" id="eyeClose2" src="눈2.png" alt="">
+    <img class="eye-img" id="eyeClose1" src="눈1.png" alt="">
+  </div>
+
+  <!-- 엔딩: Lastmain 이미지 중앙 + 이후 흰 배경 -->
+  <div class="scene" id="endingScene" style="background:#fff;">
+    <img src="마지막타이틀.png" style="
+      position:absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 75%;
+      opacity: 0;
+      transition: opacity 1.2s ease;
+    " id="endingLogo">
+  </div>
+
+  <!-- 이후 흰 배경 여백 씬 -->
+  <div style="height:100vh; background:#fff;"></div>
+
+</div>
+
+
+<script>
+
+// ── 아침 Sticky 씬 전환 (3장 이미지) ──
+function updateMorningScene() {
+  var container = document.getElementById('morningContainer');
+  if (!container) return;
+
+  var rect = container.getBoundingClientRect();
+  var scrolled = -rect.top;
+  var total = container.offsetHeight - window.innerHeight;
+  var frames = container.querySelectorAll('.morning-frame');
+
+  // 구간 계산: 0~33% → 1장, 33~66% → 2장, 66~100% → 3장
+  var index = 0;
+  if (scrolled > 0 && total > 0) {
+    var progress = Math.min(scrolled / total, 0.999);
+    index = Math.floor(progress * 3);
+  }
+
+  for (var i = 0; i < frames.length; i++) {
+    frames[i].classList.remove('active');
+  }
+  frames[index].classList.add('active');
+
+  // 세 번째 장면에서 사이렌 활성화
+  var morningSiren = document.getElementById('morningSiren');
+  if (morningSiren) {
+    if (index === 2) {
+      morningSiren.classList.add('show');
+    } else {
+      morningSiren.classList.remove('show');
+    }
+  }
+}
+
+
+// ── 아침밥 Sticky 씬 전환 ──
+function updateBreakfastScene() {
+  var container = document.getElementById('breakfastContainer');
+  if (!container) return;
+
+  var rect = container.getBoundingClientRect();
+  var scrolled = -rect.top;
+  var total = container.offsetHeight - window.innerHeight;
+  var frames = container.querySelectorAll('.morning-frame');
+  var siren = document.getElementById('sirenOverlay');
+
+  var index = 0;
+  if (scrolled > 0 && total > 0) {
+    var progress = Math.min(scrolled / total, 0.999);
+    index = Math.floor(progress * 2);
+  }
+
+  for (var i = 0; i < frames.length; i++) {
+    frames[i].classList.remove('active');
+  }
+  frames[index].classList.add('active');
+
+  // 두 번째 장면에서 사이렌 활성화
+  if (index === 1) {
+    siren.classList.add('show');
+  } else {
+    siren.classList.remove('show');
+  }
+}
+
+
+// ── 짐싸기 4장 sticky 전환 ──
+function updatePackingScene() {
+  var container = document.getElementById('packingContainer');
+  if (!container) return;
+
+  var rect = container.getBoundingClientRect();
+  var scrolled = -rect.top;
+  var total = container.offsetHeight - window.innerHeight;
+
+  if (scrolled < 0 || scrolled > total) return;
+
+  var progress = scrolled / total; // 0~1
+  var index = Math.min(Math.floor(progress * 4), 3); // 0,1,2,3
+
+  var frames = [
+    document.getElementById('gimbagImg1'),
+    document.getElementById('gimbagImg2'),
+    document.getElementById('gimbagImg3'),
+    document.getElementById('gimbagImg4')
+  ];
+  for (var i = 0; i < frames.length; i++) {
+    if (frames[i]) frames[i].classList.remove('active');
+  }
+  if (frames[index]) frames[index].classList.add('active');
+}
+
+// ── 늦는 말풍선 사이렌 ──
+var lateObserver = new IntersectionObserver(function(entries) {
+  for (var i = 0; i < entries.length; i++) {
+    var siren = document.getElementById('urgentSiren');
+    if (entries[i].isIntersecting) {
+      entries[i].target.classList.add('visible');
+      if (siren) siren.classList.add('show');
+    } else {
+      if (siren) siren.classList.remove('show');
+    }
+  }
+}, { threshold: 0.4 });
+
+var lateScene = document.getElementById('lateScene');
+if (lateScene) lateObserver.observe(lateScene);
+
+
+// ── 엘리베이터 2장 전환 + 빨강→노랑 완화 ──
+function updateElevatorScene() {
+  var container = document.getElementById('elevatorContainer');
+  if (!container) return;
+
+  var rect = container.getBoundingClientRect();
+  var scrolled = -rect.top;
+  var total = container.offsetHeight - window.innerHeight;
+
+  if (scrolled < 0 || scrolled > total) return;
+
+  var progress = scrolled / total; // 0~1
+
+  // 2장 전환: 50% 지점에서 elev1 → elev2
+  var f1 = document.getElementById('elevatorImg');
+  var f2 = document.getElementById('elevatorImg2');
+  if (f1 && f2) {
+    if (progress >= 0.5) {
+      f1.classList.remove('active');
+      f2.classList.add('active');
+    } else {
+      f1.classList.add('active');
+      f2.classList.remove('active');
+    }
+  }
+
+  // 오버레이 색상 전환 (기존 그대로)
+  var overlay = document.getElementById('elevatorOverlay');
+  if (!overlay) return;
+
+  if (progress < 0.45) {
+    var intensity = 1 - (progress / 0.45);
+    overlay.style.animation = 'sirenPulse ' + (0.5 + intensity * 0.3) + 's ease-in-out infinite';
+    overlay.style.opacity = intensity;
+  } else if (progress < 0.7) {
+    overlay.style.animation = 'none';
+    var t = (progress - 0.45) / 0.25;
+    var alpha = 0.55 * (1 - t);
+    overlay.style.boxShadow = 'inset 0 0 200px rgba(' +
+      Math.round(255) + ',' +
+      Math.round(t * 190) + ',0,' +
+      alpha.toFixed(2) + ')';
+    overlay.style.background = 'rgba(' +
+      Math.round(255) + ',' +
+      Math.round(t * 190) + ',0,' +
+      (alpha * 0.15).toFixed(3) + ')';
+    overlay.style.opacity = 1;
+  } else {
+    overlay.style.animation = 'none';
+    var fade = 1 - (progress - 0.7) / 0.3;
+    var alpha = 0.45 * Math.max(fade, 0);
+    overlay.style.boxShadow = 'inset 0 0 180px rgba(255,190,0,' + alpha.toFixed(2) + ')';
+    overlay.style.background = 'rgba(255,190,0,' + (alpha * 0.12).toFixed(3) + ')';
+    overlay.style.opacity = 1;
+  }
+}
+
+
+// ── 걷기 클릭: 발 클릭 시 걷는 소리 ──
+function onWalkingClick() {
+  var sound = new Audio('walking.mp3');
+  sound.play().catch(function() {});
+  var hint = document.getElementById('walkingHint');
+  if (hint) hint.classList.remove('show');
+}
+
+// ── 걷기 3장 전환 ──
+function updateWalkingScene() {
+  var container = document.getElementById('walkingContainer');
+  if (!container) return;
+
+  var rect = container.getBoundingClientRect();
+  var scrolled = -rect.top;
+  var total = container.offsetHeight - window.innerHeight;
+
+  if (scrolled < 0 || scrolled > total) return;
+
+  var progress = scrolled / total; // 0~1
+  var index = Math.min(Math.floor(progress * 3), 2); // 0,1,2
+
+  var frames = [
+    document.getElementById('walkImg1'),
+    document.getElementById('walkImg2'),
+    document.getElementById('walkImg3')
+  ];
+  for (var i = 0; i < frames.length; i++) {
+    if (frames[i]) frames[i].classList.remove('active');
+  }
+  if (frames[index]) frames[index].classList.add('active');
+
+  // 진입하면 힌트 표시
+  var hint = document.getElementById('walkingHint');
+  if (hint && scrolled >= 0) hint.classList.add('show');
+}
+
+
+// ── 공사 패닝 + 주황→피빨강 사이렌 ──
+function updateConstructionScene() {
+  var container = document.getElementById('constructionContainer');
+  if (!container) return;
+
+  var rect = container.getBoundingClientRect();
+  var scrolled = -rect.top;
+  var total = container.offsetHeight - window.innerHeight;
+
+  if (scrolled < 0 || scrolled > total) return;
+
+  var progress = scrolled / total; // 0~1
+
+  // 3장 전환
+  var frames = [
+    document.getElementById('constImg1'),
+    document.getElementById('constImg2'),
+    document.getElementById('constImg3')
+  ];
+  var index = Math.min(Math.floor(progress * 3), 2);
+  for (var i = 0; i < frames.length; i++) {
+    if (frames[i]) frames[i].classList.remove('active');
+  }
+  if (frames[index]) frames[index].classList.add('active');
+
+  // 사이렌: 주황→피빨강 (opacity + speed + hue)
+  var overlay = document.getElementById('constructionOverlay');
+  if (overlay) {
+    var speed = (0.7 - progress * 0.35).toFixed(2);
+    var opacity = 0.4 + progress * 0.6;
+    var hue = -(progress * 30);
+    var sat = 1 + progress * 1.5;
+    overlay.style.animationDuration = speed + 's';
+    overlay.style.opacity = opacity;
+    overlay.style.filter = 'hue-rotate(' + hue + 'deg) saturate(' + sat + ')';
+  }
+}
+
+
+// ── 점심 시계 클릭 ──
+function onLunchClockClick() {
+  var img = document.getElementById('lunchClockImg');
+  if (img) img.classList.add('shake');
+  var sound = new Audio('alarm.mp3');
+  sound.play().catch(function() {});
+  var hint = document.getElementById('lunchClockHint');
+  if (hint) hint.classList.remove('show');
+}
+
+// ── 점심 시계 씬 Observer ──
+var lunchClockTriggered = false;
+var lunchClockObserver = new IntersectionObserver(function(entries) {
+  for (var i = 0; i < entries.length; i++) {
+    if (entries[i].isIntersecting) {
+      entries[i].target.classList.add('visible');
+      var hint = document.getElementById('lunchClockHint');
+      if (hint) setTimeout(function() { hint.classList.add('show'); }, 1200);
+      var img = document.getElementById('lunchClockImg');
+      if (img && !lunchClockTriggered) { lunchClockTriggered = true; }
+    } else {
+      var img = document.getElementById('lunchClockImg');
+      if (img) img.classList.remove('shake');
+      var hint = document.getElementById('lunchClockHint');
+      if (hint) hint.classList.remove('show');
+      lunchClockTriggered = false;
+    }
+  }
+}, { threshold: 0.4 });
+
+var lunchClockScene = document.getElementById('lunchClockScene');
+if (lunchClockScene) lunchClockObserver.observe(lunchClockScene);
+
+
+// ── 등교 마지막 씬 클릭: Heartbeat 재생 ──
+function onLastClick() {
+  var sound = new Audio('Heartbeat.mp3');
+  sound.play().catch(function() {});
+  var hint = document.getElementById('lastHint');
+  if (hint) hint.style.opacity = '0';
+}
+
+var lastObserver = new IntersectionObserver(function(entries) {
+  for (var i = 0; i < entries.length; i++) {
+    var hint = document.getElementById('lastHint');
+    if (entries[i].isIntersecting) {
+      entries[i].target.classList.add('visible');
+      if (hint) setTimeout(function() { hint.style.opacity = '1'; }, 400);
+    } else {
+      if (hint) hint.style.opacity = '0';
+    }
+  }
+}, { threshold: 0.3 });
+
+var lastMorningScene = document.getElementById('lastMorningScene');
+if (lastMorningScene) lastObserver.observe(lastMorningScene);
+
+// ── 태양이 클릭: 심장박동 소리 ──
+function onTayangClick() {
+  var sound = new Audio('Heartbeat.mp3');
+  sound.play().catch(function() {});
+  var hint = document.getElementById('tayangHint');
+  if (hint) { hint.classList.remove('show'); }
+}
+
+// ── 등교 마지막 씬: 사이렌 + 힌트 ──
+var lastMorningObserver = new IntersectionObserver(function(entries) {
+  for (var i = 0; i < entries.length; i++) {
+    var overlay = document.getElementById('panicOverlay');
+    var hint    = document.getElementById('tayangHint');
+    if (entries[i].isIntersecting) {
+      entries[i].target.classList.add('visible');
+      if (overlay) overlay.classList.add('show');
+      setTimeout(function() {
+        if (hint) hint.classList.add('show');
+      }, 800);
+    } else {
+      if (overlay) overlay.classList.remove('show');
+      if (hint)    hint.classList.remove('show');
+    }
+  }
+}, { threshold: 0.4 });
+
+var lastMorningScene = document.getElementById('lastMorningScene');
+if (lastMorningScene) lastMorningObserver.observe(lastMorningScene);
+
+
+// ── 짐풀기 Sticky 씬 (4장) ──
+function updateUnpackScene() {
+  var container = document.getElementById('unpackContainer');
+  if (!container) return;
+
+  var rect = container.getBoundingClientRect();
+  var scrolled = -rect.top;
+  var total = container.offsetHeight - window.innerHeight;
+  var frames = container.querySelectorAll('.morning-frame');
+
+  var index = 0;
+  if (scrolled > 0 && total > 0) {
+    var progress = Math.min(scrolled / total, 0.999);
+    index = Math.floor(progress * 4); // 4장
+    if (index > 3) index = 3;
+  }
+
+  for (var i = 0; i < frames.length; i++) {
+    frames[i].classList.remove('active');
+  }
+  frames[index].classList.add('active');
+}
+
+
+// ── 수업 씬 클릭: 아이들 소리 30초 재생 ──
+var classSound = null;
+var classTimer = null;
+
+function onClassClick() {
+  if (classSound) return;
+  classClicked = true;
+  var hint = document.getElementById('classHint');
+  if (hint) hint.style.opacity = '0';
+  classSound = new Audio('kids_talking.mp3');
+  classSound.play().catch(function() {});
+  classTimer = setTimeout(function() {
+    if (classSound) { classSound.pause(); classSound = null; }
+  }, 30000);
+}
+
+// ── 수업 씬 패닝 ──
+function updateClassScene() {
+  // classContainer는 .scene 구조로 변경됨 — 처리 없음
+}
+
+
+// ── class1 씬 진입 시 힌트 표시 ──
+// ── class1 힌트 — scroll 기반으로 처리 ──
+var classClicked = false;
+function updateClassHint() {
+  if (classClicked) return;
+  var el = document.getElementById('classContainer');
+  var hint = document.getElementById('classHint');
+  if (!el || !hint) return;
+  var rect = el.getBoundingClientRect();
+  var inView = rect.top < window.innerHeight * 0.9 && rect.bottom > window.innerHeight * 0.1;
+  hint.style.opacity = inView ? '1' : '0';
+}
+
+var classContainer = document.getElementById('classContainer');
+if (classContainer) classContainer.classList.add('visible');
+
+// 로드 시 즉시 한 번 실행
+setTimeout(updateClassHint, 100);
+
+// ── class2 씬 visible ──
+var class2Observer = new IntersectionObserver(function(entries) {
+  for (var i = 0; i < entries.length; i++) {
+    if (entries[i].isIntersecting) {
+      entries[i].target.classList.add('visible');
+    }
+  }
+}, { threshold: 0.1 });
+
+var class2Scene = document.getElementById('class2Scene');
+if (class2Scene) class2Observer.observe(class2Scene);
+
+// ── class34 완전 이탈 시 음원 정지 ──
+var class34StopObserver = new IntersectionObserver(function(entries) {
+  for (var i = 0; i < entries.length; i++) {
+    if (!entries[i].isIntersecting) {
+      // 완전히 화면 밖으로 나가면 정지
+      if (classSound) {
+        clearTimeout(classTimer);
+        classSound.pause();
+        classSound = null;
+      }
+    }
+  }
+}, { threshold: 0 });
+
+var class34El = document.getElementById('class34Container');
+if (class34El) class34StopObserver.observe(class34El);
+
+
+// ── class3+4 노랑→빨강 사이렌 ──
+function updateClass34Scene() {
+  var container = document.getElementById('class34Container');
+  if (!container) return;
+
+  var rect = container.getBoundingClientRect();
+  var scrolled = -rect.top;
+  var total = container.offsetHeight - window.innerHeight;
+
+  var frames = container.querySelectorAll('.morning-frame');
+  var overlay = document.getElementById('class34Overlay');
+
+  if (scrolled < 0) return;
+
+  if (scrolled > total) {
+    // class34 벗어나면 소리 정지
+    if (classSound) {
+      clearTimeout(classTimer);
+      classSound.pause();
+      classSound = null;
+    }
+    return;
+  }
+
+  var progress = Math.min(scrolled / total, 0.999);
+
+  // 장면 전환
+  var index = progress < 0.5 ? 0 : 1;
+  for (var i = 0; i < frames.length; i++) frames[i].classList.remove('active');
+  frames[index].classList.add('active');
+
+  // 노랑→빨강 색상 + 점점 빨라지는 깜빡임
+  if (overlay) {
+    // 색: 노랑(255,220,0) → 빨강(255,0,0)
+    var g = Math.round(220 - progress * 220); // 220→0
+    var intensity = 0.4 + progress * 0.5;      // 0.4→0.9
+    var speed = (0.6 - progress * 0.35).toFixed(2); // 0.6s→0.25s
+
+    overlay.style.animation = 'none';
+    overlay.style.boxShadow = 'inset 0 0 300px rgba(255,' + g + ',0,' + (intensity * 0.5).toFixed(2) + ')';
+    overlay.style.background = 'rgba(255,' + g + ',0,' + (intensity * 0.08).toFixed(3) + ')';
+
+    // 깜빡임은 requestAnimationFrame으로
+    overlay.dataset.speed = speed;
+    overlay.dataset.g = g;
+    overlay.dataset.intensity = intensity;
+  }
+}
+
+// class34 깜빡임 루프
+var class34FlashOn = false;
+var class34LastFlip = 0;
+
+function class34FlashLoop(timestamp) {
+  var overlay = document.getElementById('class34Overlay');
+  if (!overlay || !overlay.dataset.speed) {
+    requestAnimationFrame(class34FlashLoop);
+    return;
+  }
+  var speed = parseFloat(overlay.dataset.speed) * 1000;
+  if (timestamp - class34LastFlip > speed) {
+    class34LastFlip = timestamp;
+    class34FlashOn = !class34FlashOn;
+    var g = parseInt(overlay.dataset.g) || 0;
+    var intensity = parseFloat(overlay.dataset.intensity) || 0.4;
+    if (class34FlashOn) {
+      overlay.style.boxShadow = 'inset 0 0 320px rgba(255,' + g + ',0,' + intensity.toFixed(2) + ')';
+      overlay.style.background = 'rgba(255,' + g + ',0,' + (intensity * 0.12).toFixed(3) + ')';
+    } else {
+      overlay.style.boxShadow = 'inset 0 0 60px rgba(255,' + g + ',0,0.05)';
+      overlay.style.background = 'rgba(0,0,0,0)';
+    }
+  }
+  requestAnimationFrame(class34FlashLoop);
+}
+requestAnimationFrame(class34FlashLoop);
+
+
+// ── 순서강박 Sticky 씬 (2장) ──
+function updateOrderScene() {
+  var container = document.getElementById('orderContainer');
+  if (!container) return;
+
+  var rect = container.getBoundingClientRect();
+  var scrolled = -rect.top;
+  var total = container.offsetHeight - window.innerHeight;
+  var frames = container.querySelectorAll('.morning-frame');
+
+  var index = 0;
+  if (scrolled > 0 && total > 0) {
+    index = scrolled / total < 0.5 ? 0 : 1;
+  }
+
+  for (var i = 0; i < frames.length; i++) frames[i].classList.remove('active');
+  frames[index].classList.add('active');
+}
+
+
+// ── 밤 시계 클릭 ──
+function onNightClockClick() {
+  var img = document.getElementById('nightClockImg');
+  if (img) img.classList.add('shake');
+  var sound = new Audio('alarm.mp3');
+  sound.play().catch(function() {});
+  var hint = document.getElementById('nightClockHint');
+  if (hint) hint.classList.remove('show');
+}
+
+// ── 밤 시계 Observer ──
+var nightClockObserver = new IntersectionObserver(function(entries) {
+  for (var i = 0; i < entries.length; i++) {
+    if (entries[i].isIntersecting) {
+      entries[i].target.classList.add('visible');
+      var hint = document.getElementById('nightClockHint');
+      if (hint) setTimeout(function() { hint.classList.add('show'); }, 1200);
+    } else {
+      var img = document.getElementById('nightClockImg');
+      if (img) img.classList.remove('shake');
+      var hint = document.getElementById('nightClockHint');
+      if (hint) hint.classList.remove('show');
+    }
+  }
+}, { threshold: 0.4 });
+
+var nightClockScene = document.getElementById('nightClockScene');
+if (nightClockScene) nightClockObserver.observe(nightClockScene);
+
+
+// ── 저녁식사 Sticky 씬 (2장) ──
+function updateDinnerScene() {
+  var container = document.getElementById('dinnerContainer');
+  if (!container) return;
+
+  var rect = container.getBoundingClientRect();
+  var scrolled = -rect.top;
+  var total = container.offsetHeight - window.innerHeight;
+  var frames = container.querySelectorAll('.morning-frame');
+
+  var index = (scrolled > 0 && total > 0 && scrolled / total >= 0.5) ? 1 : 0;
+
+  for (var i = 0; i < frames.length; i++) frames[i].classList.remove('active');
+  frames[index].classList.add('active');
+}
+
+
+// ── 상단 진행 바 ──
+var progressBar = document.getElementById('progress-bar');
+window.addEventListener('scroll', function() {
+  var scrolled = window.scrollY;
+  var total = document.body.scrollHeight - window.innerHeight;
+  var pct = total > 0 ? (scrolled / total) * 100 : 0;
+  progressBar.style.width = pct + '%';
+  updateMorningScene();
+  updateBreakfastScene();
+  updatePackingScene();
+  updateElevatorScene();
+  updateWalkingScene();
+  updateConstructionScene();
+  updateUnpackScene();
+  updateOrderScene();
+  updateClassScene();
+  updateClassHint();
+  updateClass34Scene();
+  updateDinnerScene();
+  updateNightBagScene();
+  updateSleepScene();
+});
+
+
+// ── p5.js 해바라기 배경 ──
+var sketch = function(p) {
+
+  var flowers = [];
+  var petals  = [];
+
+  // 각 해바라기 위치/크기/방향 설정
+  var configs = [
+    [0.04, 0.06, -25, 200, 10],
+    [0.20, -0.04, 14, 150, 8],
+    [0.82, 0.02, -10, 170, 9],
+    [0.96, 0.10,  28, 140, 8],
+    [0.01, 0.42,   8, 130, 7],
+    [0.97, 0.48, -18, 160, 10],
+    [0.06, 0.86,  20, 190, 9],
+    [0.28, 0.94,  -8, 135, 8],
+    [0.62, 0.92,  12, 150, 10],
+    [0.92, 0.83, -26, 180, 8],
+    [0.48, 0.03,   5, 145, 9],
+    [0.74, 0.52, -14, 125, 7]
+  ];
+
+  function makeFlower(cfg) {
+    return {
+      xp: cfg[0], yp: cfg[1],
+      angle: cfg[2] * (Math.PI / 180),
+      size: cfg[3],
+      petalCount: cfg[4],
+      wobbleSpeed: p.random(0.5, 1.0),
+      wobbleAmt:   p.random(0.10, 0.18),
+      floatSpeed:  p.random(0.3, 0.7),
+      floatAmt:    p.random(8, 18),
+      phase:       p.random(p.TWO_PI),
+      alpha:       p.random(220, 255)
+    };
+  }
+
+  function spawnPetal(x, y, progress) {
+    petals.push({
+      x: x + p.random(-30, 30),
+      y: y,
+      vx: p.random(-2, 2),
+      vy: p.random(-1, 0.5),
+      gravity: p.random(0.05, 0.15),
+      rot: p.random(p.TWO_PI),
+      rotSpeed: p.random(-0.08, 0.08),
+      size: p.random(20, 50),
+      alpha: 240,
+      fallSpeed: p.lerp(0.3, 1.5, progress)
+    });
+  }
+
+  p.setup = function() {
+    var canvas = p.createCanvas(p.windowWidth, p.windowHeight);
+    canvas.parent('p5-canvas');
+    canvas.style('display', 'block');
+    p.noStroke();
+    for (var i = 0; i < configs.length; i++) {
+      flowers.push(makeFlower(configs[i]));
+    }
+  };
+
+  p.draw = function() {
+    var scrollY   = window.scrollY || 0;
+    var maxScroll = document.body.scrollHeight - window.innerHeight;
+    var progress  = maxScroll > 0 ? scrollY / maxScroll : 0;
+
+    // 타이틀 구간에서 p5 해바라기 페이드아웃
+    // (타이틀 이미지 안에 이미 해바라기가 있어서 중복 방지)
+    var flowerAlpha;
+    if (progress < 0.03) {
+      flowerAlpha = 0;
+    } else if (progress < 0.09) {
+      flowerAlpha = (progress - 0.03) / 0.06;
+    } else {
+      flowerAlpha = 1;
+    }
+
+    // 스크롤 진행도에 따른 배경색 전환
+    var r, g, b;
+    if (progress < 0.02) {
+      // 메인: 노란색
+      r = 255; g = 230; b = 0;
+    } else if (progress <= 0.45) {
+      // 아침: 노란 → 하늘색
+      var t = (progress - 0.02) / 0.43;
+      r = p.lerp(255, 135, t);
+      g = p.lerp(230, 206, t);
+      b = p.lerp(0,   235, t);
+    } else if (progress <= 0.72) {
+      // 점심: 하늘색 → 노란색
+      var t = (progress - 0.45) / 0.27;
+      r = p.lerp(135, 255, t);
+      g = p.lerp(206, 220, t);
+      b = p.lerp(235, 0,   t);
+    } else {
+      // 저녁: 노란색 → 짙은 주황빨강
+      var t = (progress - 0.72) / 0.28;
+      r = p.lerp(255, 220, t);
+      g = p.lerp(220, 80,  t);
+      b = p.lerp(0,   30,  t);
+    }
+
+    var evening = progress > 0.72 ? (progress - 0.72) / 0.28 : 0;
+
+    // 저녁 화면 흔들림
+    var shakeX = 0;
+    var shakeY = 0;
+    if (evening > 0.3) {
+      var shakeAmt = p.map(evening, 0.3, 1.0, 0, 5);
+      shakeX = p.random(-shakeAmt, shakeAmt);
+      shakeY = p.random(-shakeAmt, shakeAmt);
+    }
+
+    p.background(r, g, b);
+    document.body.style.background = 'rgb(' + Math.round(r) + ',' + Math.round(g) + ',' + Math.round(b) + ')';
+
+    p.push();
+    p.translate(shakeX, shakeY);
+
+    // 떨어지는 꽃잎 (저녁 구간)
+    for (var i = petals.length - 1; i >= 0; i--) {
+      var pt = petals[i];
+      pt.x  += pt.vx;
+      pt.y  += pt.vy + pt.fallSpeed;
+      pt.vy += pt.gravity;
+      pt.rot += pt.rotSpeed;
+      pt.alpha -= 0.8;
+
+      if (pt.alpha <= 0 || pt.y > p.height + 40) {
+        petals.splice(i, 1);
+        continue;
+      }
+
+      var pg2 = evening > 0.5 ? p.lerp(160, 90, evening) : 210;
+      p.push();
+      p.translate(pt.x, pt.y);
+      p.rotate(pt.rot);
+      p.fill(255, pg2, 0, pt.alpha);
+      p.ellipse(0, 0, pt.size * 0.65, pt.size);
+      p.pop();
+    }
+
+    // 꽃잎 생성
+    if (evening > 0.1) {
+      var spawnRate = p.map(evening, 0.1, 1.0, 0.05, 0.5);
+      if (p.random() < spawnRate) {
+        var rf = flowers[p.floor(p.random(flowers.length))];
+        spawnPetal(rf.xp * p.width, rf.yp * p.height, evening);
+      }
+    }
+
+    // 해바라기 그리기 (타이틀 구간 제외)
+    if (flowerAlpha > 0) {
+      for (var i = 0; i < flowers.length; i++) {
+        drawFlower(flowers[i], progress, evening, flowerAlpha);
+      }
+    }
+
+    p.pop();
+  };
+
+  function drawFlower(f, progress, evening, flowerAlpha) {
+    var t = p.millis() * 0.001;
+
+    var wobbleScale = 1 + evening * 4;
+    var wobbled = f.angle
+      + Math.sin(t * f.wobbleSpeed * (1 + evening * 2) + f.phase) * f.wobbleAmt * wobbleScale;
+
+    if (evening > 0.2) {
+      wobbled += Math.sin(t * 15 + f.phase) * p.map(evening, 0.2, 1.0, 0, 0.15);
+    }
+
+    var floatY = Math.sin(t * f.floatSpeed * (1 + evening) + f.phase) * f.floatAmt * (1 + evening * 2);
+    var x = f.xp * p.width;
+    var y = f.yp * p.height + floatY;
+
+    var pr, pg, pb;
+    if (progress <= 0.45) {
+      pr = 255; pg = 200; pb = 0;
+    } else if (progress <= 0.72) {
+      pr = 255; pg = 160; pb = 0;
+    } else {
+      pr = 255; pg = p.lerp(140, 50, evening); pb = 0;
+    }
+
+    var visiblePetals = f.petalCount;
+    if (evening > 0.4) {
+      visiblePetals = Math.max(3, f.petalCount - Math.floor(evening * 4));
+    }
+
+    var a = f.alpha * flowerAlpha;
+
+    p.push();
+    p.translate(x, y);
+    p.rotate(wobbled);
+
+    // 줄기
+    var stemWobble = evening > 0 ? Math.sin(t * 8 + f.phase) * evening * 0.2 : 0;
+    p.stroke(40, 100, 20, a * (1 - evening * 0.2));
+    p.strokeWeight(f.size * 0.035);
+    p.line(stemWobble * 10, f.size * 0.12, 0, f.size * 0.72);
+    p.noStroke();
+
+    var petalW = f.size * 0.22;
+    var petalH = f.size * 0.42;
+    var dist   = f.size * 0.27;
+
+    // 꽃잎
+    p.fill(pr, pg, pb, a);
+    for (var k = 0; k < visiblePetals; k++) {
+      var ang = (p.TWO_PI / f.petalCount) * k;
+      var petalShake = evening > 0.3 ? Math.sin(t * 6 + k + f.phase) * evening * 8 : 0;
+      p.push();
+      p.rotate(ang);
+      p.translate(petalShake * 0.1, -dist + petalShake * 0.05);
+      p.ellipse(0, 0, petalW, petalH);
+      p.pop();
+    }
+
+    // 꽃 중심
+    p.fill(70, 38, 0, a);
+    p.ellipse(0, 0, f.size * 0.32, f.size * 0.32);
+
+    p.pop();
+  }
+
+  p.windowResized = function() {
+    p.resizeCanvas(p.windowWidth, p.windowHeight);
+  };
+
+};
+
+new p5(sketch);
+
+
+// ── 밤 가방 Sticky 씬 (6장) ──
+function updateNightBagScene() {
+  var container = document.getElementById('nightBagContainer');
+  if (!container) return;
+
+  var rect = container.getBoundingClientRect();
+  var scrolled = -rect.top;
+  var total = container.offsetHeight - window.innerHeight;
+  var frames = container.querySelectorAll('.morning-frame');
+
+  var index = 0;
+  if (scrolled > 0 && total > 0) {
+    var progress = Math.min(scrolled / total, 0.999);
+    index = Math.floor(progress * 6); // 6장
+    if (index > 5) index = 5;
+  }
+
+  for (var i = 0; i < frames.length; i++) frames[i].classList.remove('active');
+  frames[index].classList.add('active');
+
+  // 힌트: NightBag1일 때만 표시, 나머지는 완전히 숨김
+  var hint = document.getElementById('nightBagHint');
+  if (hint) {
+    var inScene = (scrolled > 10 && scrolled <= total);
+    if (inScene && index === 0 && !nightAmbienceSound) {
+      hint.style.opacity = '1';
+    } else {
+      hint.style.opacity = '0';
+    }
+  }
+
+  // NightBag6(마지막)일 때 주황 사이렌 활성화
+  var siren = document.getElementById('nightBagSiren');
+  if (siren) {
+    siren.style.opacity = (index === 5) ? '1' : '0';
+  }
+}
+
+// ── 수면 Sticky 씬 (3장) + Sleep3에서 night_ambience 페이드아웃 종료 ──
+function updateSleepScene() {
+  var container = document.getElementById('sleepContainer');
+  if (!container) return;
+
+  var rect = container.getBoundingClientRect();
+  var scrolled = -rect.top;
+  var total = container.offsetHeight - window.innerHeight;
+  var frames = container.querySelectorAll('.morning-frame');
+
+  var index = 0;
+  if (scrolled > 0 && total > 0) {
+    var progress = Math.min(scrolled / total, 0.999);
+    index = Math.min(Math.floor(progress * 3), 2);
+  }
+
+  for (var i = 0; i < frames.length; i++) frames[i].classList.remove('active');
+  frames[index].classList.add('active');
+
+  // Sleep3 진입 시 dream canvas 활성화
+  var dreamCanvas = document.getElementById('sleepDreamCanvas');
+  if (dreamCanvas) dreamCanvas.style.opacity = (index === 2) ? '1' : '0';
+
+  // Sleep3(index=2) 진입 시 night_ambience 페이드아웃 후 정지
+  if (index === 2 && nightAmbienceSound && !nightAmbienceSound._fading) {
+    nightAmbienceSound._fading = true;
+    var fadeOut = setInterval(function() {
+      if (!nightAmbienceSound) { clearInterval(fadeOut); return; }
+      if (nightAmbienceSound.volume > 0.05) {
+        nightAmbienceSound.volume -= 0.05;
+      } else {
+        nightAmbienceSound.pause();
+        nightAmbienceSound.currentTime = 0;
+        nightAmbienceSound = null;
+        clearInterval(fadeOut);
+      }
+    }, 80);
+  }
+}
+
+
+// ── 밤 배경음 (night_ambience) — NightBag 클릭 시 시작 ──
+var nightAmbienceSound = null;
+
+function onNightBagClick() {
+  // 이미 재생 중이면 무시
+  if (nightAmbienceSound) return;
+  nightAmbienceSound = new Audio('night_ambience.mp3');
+  nightAmbienceSound.loop = true;
+  nightAmbienceSound.volume = 0.7;
+  nightAmbienceSound.play().catch(function() {});
+  // 힌트 숨김
+  var hint = document.getElementById('nightBagHint');
+  if (hint) hint.classList.remove('show');
+}
+
+var nightBagObserver = new IntersectionObserver(function(entries) {
+  for (var i = 0; i < entries.length; i++) {
+    if (!entries[i].isIntersecting) {
+      // 씬 벗어나면 힌트 숨김
+      var hint = document.getElementById('nightBagHint');
+      if (hint) hint.classList.remove('show');
+    }
+  }
+}, { threshold: 0.3 });
+
+var nightBagContainer = document.getElementById('nightBagContainer');
+if (nightBagContainer) nightBagObserver.observe(nightBagContainer);
+
+
+// ── TV 씬 클릭: television_playing.mp3 재생 ──
+var tvSound = null;
+
+function onTVClick() {
+  if (tvSound) return;
+  tvSound = new Audio('television_playing.mp3');
+  tvSound.play().catch(function() {});
+  var hint = document.getElementById('tvHint');
+  if (hint) hint.classList.remove('show');
+}
+
+// ── TV 씬 Observer: 진입 시 힌트 표시, 이탈 시 소리 정지 ──
+var tvObserver = new IntersectionObserver(function(entries) {
+  for (var i = 0; i < entries.length; i++) {
+    if (entries[i].isIntersecting) {
+      entries[i].target.classList.add('visible');
+      // 진입하면 힌트 표시
+      var hint = document.getElementById('tvHint');
+      if (hint) setTimeout(function() { hint.classList.add('show'); }, 600);
+    } else {
+      // 씬 벗어나면 소리 정지 + 초기화
+      if (tvSound) {
+        tvSound.pause();
+        tvSound.currentTime = 0;
+        tvSound = null;
+      }
+      var hint = document.getElementById('tvHint');
+      if (hint) hint.classList.remove('show');
+    }
+  }
+}, { threshold: 0.4 });
+
+var tvScene = document.getElementById('tvScene');
+if (tvScene) tvObserver.observe(tvScene);
+
+
+// ── 페이지 로드 → 타이틀 등장 ──
+window.addEventListener('load', function() {
+
+  // 타이틀 이미지 fade in
+  setTimeout(function() {
+    document.getElementById('mainTitle').classList.add('show');
+  }, 200);
+
+  // 스크롤 힌트
+  setTimeout(function() {
+    document.getElementById('scrollHint').classList.add('show');
+  }, 1400);
+
+});
+
+
+// ── 시계 씬 순차 애니메이션 ──
+var clockTriggered = false; // 한 번만 실행
+var alarmSound = new Audio('alarm.mp3');
+alarmSound.loop = false;
+
+// 시계 클릭 함수 — 클릭 안에서 바로 Audio 생성해야 autoplay 정책 통과
+function onClockClick() {
+  var img = document.getElementById('clockImg');
+  if (img) img.classList.add('shake');
+
+  var sound = new Audio('alarm.mp3');
+  sound.play().catch(function(err) { console.log('재생 실패:', err); });
+
+  var hint = document.getElementById('clockHint');
+  if (hint) hint.classList.remove('show');
+}
+
+var clockObserver = new IntersectionObserver(function(entries) {
+  for (var i = 0; i < entries.length; i++) {
+    if (entries[i].isIntersecting) {
+      entries[i].target.classList.add('visible');
+
+      // 어두움 → 밝아지는 dawn 효과
+      var dawn = document.getElementById('clockDawn');
+      if (dawn) setTimeout(function() { dawn.style.opacity = '0'; }, 200);
+
+      // 시계 씬 진입 시 힌트 표시
+      var hint = document.getElementById('clockHint');
+      if (hint) setTimeout(function() { hint.classList.add('show'); }, 2000);
+
+      if (!clockTriggered) {
+        clockTriggered = true;
+        setTimeout(function() {
+          var bag = document.getElementById('clockBag');
+          if (bag) bag.classList.add('show');
+        }, 3800);
+        setTimeout(function() {
+          var school = document.getElementById('clockSchool');
+          if (school) school.classList.add('show');
+        }, 5500);
+      }
+    } else {
+      // 씬 벗어나면 dawn 다시 어둡게 + 초기화
+      var dawn2 = document.getElementById('clockDawn');
+      if (dawn2) {
+        dawn2.style.transition = 'none';
+        dawn2.style.opacity = '1';
+        setTimeout(function() { dawn2.style.transition = 'opacity 2s ease'; }, 100);
+      }
+      if (typeof alarmSound !== 'undefined' && alarmSound) {
+        alarmSound.pause();
+        alarmSound.currentTime = 0;
+      }
+      var hint = document.getElementById('clockHint');
+      if (hint) hint.classList.remove('show');
+      var ci = document.getElementById('clockImg');
+      if (ci) ci.classList.remove('shake');
+    }
+  }
+}, { threshold: 0.1 });
+
+var clockScene = document.getElementById('clockScene');
+if (clockScene) clockObserver.observe(clockScene);
+
+
+// ── 엔딩 씬: 해바라기 로고 fade in ──
+var endingObserver = new IntersectionObserver(function(entries) {
+  for (var i = 0; i < entries.length; i++) {
+    var logo = document.getElementById('endingLogo');
+    if (entries[i].isIntersecting) {
+      entries[i].target.classList.add('visible');
+      if (logo) setTimeout(function() { logo.style.opacity = '1'; }, 300);
+    } else {
+      if (logo) logo.style.opacity = '0';
+    }
+  }
+}, { threshold: 0.3 });
+
+var endingScene = document.getElementById('endingScene');
+if (endingScene) endingObserver.observe(endingScene);
+
+
+// ── 눈 감는 씬: 눈3(뜸) → 눈2(반쯤) → 눈1(감음) ──
+var eyeCloseTriggered = false;
+var eyeCloseObserver = new IntersectionObserver(function(entries) {
+  for (var i = 0; i < entries.length; i++) {
+    if (entries[i].isIntersecting && !eyeCloseTriggered) {
+      eyeCloseTriggered = true;
+
+      var e3 = document.getElementById('eyeClose3'); // 완전히 뜬 눈
+      var e2 = document.getElementById('eyeClose2'); // 반쯤 감은 눈
+      var e1 = document.getElementById('eyeClose1'); // 완전히 감은 눈
+
+      // 눈3 — 완전히 뜬 눈 먼저 보여줌
+      setTimeout(function() {
+        e3.style.opacity = '1';
+      }, 400);
+
+      // 눈2 — 반쯤 감김
+      setTimeout(function() {
+        e3.style.opacity = '0';
+        e2.style.opacity = '1';
+      }, 1400);
+
+      // 눈1 — 완전히 감김
+      setTimeout(function() {
+        e2.style.opacity = '0';
+        e1.style.opacity = '1';
+      }, 2600);
+
+    } else if (!entries[i].isIntersecting) {
+      // 씬 벗어나면 초기화
+      eyeCloseTriggered = false;
+      var e1 = document.getElementById('eyeClose1');
+      var e2 = document.getElementById('eyeClose2');
+      var e3 = document.getElementById('eyeClose3');
+      if (e1) e1.style.opacity = '0';
+      if (e2) e2.style.opacity = '0';
+      if (e3) e3.style.opacity = '0';
+    }
+  }
+}, { threshold: 0.5 });
+
+var eyeCloseScene = document.getElementById('eyeCloseScene');
+if (eyeCloseScene) eyeCloseObserver.observe(eyeCloseScene);
+
+
+// ── 눈 씬 순차 애니메이션 ──
+var eyeTriggered = false;
+var eyeObserver = new IntersectionObserver(function(entries) {
+  for (var i = 0; i < entries.length; i++) {
+    if (entries[i].isIntersecting && !eyeTriggered) {
+      eyeTriggered = true;
+
+      var e1 = document.getElementById('eye1');
+      var e2 = document.getElementById('eye2');
+      var e3 = document.getElementById('eye3');
+
+      // 눈1 — 감은 눈 fade in
+      setTimeout(function() {
+        e1.style.opacity = '1';
+      }, 300);
+
+      // 눈2 — 반쯤 뜬 눈
+      setTimeout(function() {
+        e1.style.opacity = '0';
+        e2.style.opacity = '1';
+      }, 1100);
+
+      // 눈3 — 완전히 뜬 눈
+      setTimeout(function() {
+        e2.style.opacity = '0';
+        e3.style.opacity = '1';
+      }, 2000);
+    }
+  }
+}, { threshold: 0.5 });
+
+var eyeScene = document.getElementById('eyeScene');
+if (eyeScene) eyeObserver.observe(eyeScene);
+
+
+// ── IntersectionObserver — 씬 등장 ──
+var observer = new IntersectionObserver(function(entries) {
+  for (var i = 0; i < entries.length; i++) {
+    if (entries[i].isIntersecting) {
+      entries[i].target.classList.add('visible');
+    }
+  }
+}, { threshold: 0.15 });
+
+var scenes = document.querySelectorAll('.scene');
+for (var i = 0; i < scenes.length; i++) {
+  observer.observe(scenes[i]);
+}
+
+// ── 태양이 캐릭터 등장 ──
+var charObserver = new IntersectionObserver(function(entries) {
+  for (var i = 0; i < entries.length; i++) {
+    if (entries[i].isIntersecting) {
+      entries[i].target.classList.add('show');
+    }
+  }
+}, { threshold: 0.2 });
+
+var chars = document.querySelectorAll('.char-sun');
+for (var i = 0; i < chars.length; i++) {
+  charObserver.observe(chars[i]);
+}
+
+// ── Sleep3 꿈나라 p5 스케치 ──
+var dreamSketch = function(p) {
+  var particles = [];
+  var W, H;
+  var pg; // offscreen graphics for vignette
+
+  function Particle() { this.reset(true); }
+
+  Particle.prototype.reset = function(init) {
+    this.x = p.random(W);
+    this.y = init ? p.random(H) : p.random(H * 0.5, H + 80);
+    this.size = p.random(4, 18);
+    this.vy = p.random(-0.3, -1.0);
+    this.vx = p.random(-0.25, 0.25);
+    this.life = init ? Math.floor(p.random(200)) : 0;
+    this.maxLife = p.random(200, 380);
+    this.type = Math.random() < 0.55 ? 'star' : 'petal';
+    this.rot = p.random(p.TWO_PI);
+    this.rotV = p.random(-0.018, 0.018);
+    this.wobble = p.random(0.008, 0.035);
+    var palettes = [
+      [255, 235, 100], // 골드
+      [255, 210, 140], // 피치
+      [255, 248, 180], // 크림옐로
+      [210, 175, 255], // 소프트라벤더
+      [175, 225, 255], // 아이스블루
+      [255, 190, 190], // 로즈
+    ];
+    var c = palettes[Math.floor(p.random(palettes.length))];
+    this.r = c[0]; this.g = c[1]; this.b = c[2];
+  };
+
+  Particle.prototype.update = function() {
+    this.life++;
+    this.y += this.vy;
+    this.x += this.vx + Math.sin(this.life * this.wobble) * 0.5;
+    this.rot += this.rotV;
+  };
+
+  Particle.prototype.draw = function() {
+    var t = this.life / this.maxLife;
+    var a = t < 0.15 ? t / 0.15 : (t > 0.65 ? (1 - t) / 0.35 : 1);
+    a = Math.max(0, Math.min(1, a));
+    var s = this.size;
+
+    p.push();
+    p.translate(this.x, this.y);
+    p.rotate(this.rot);
+    p.noStroke();
+
+    if (this.type === 'star') {
+      // 외곽 글로우
+      p.fill(this.r, this.g, this.b, a * 40);
+      p.ellipse(0, 0, s * 3.5, s * 3.5);
+      p.fill(this.r, this.g, this.b, a * 80);
+      p.ellipse(0, 0, s * 2.2, s * 2.2);
+      // 별 본체
+      p.fill(this.r, this.g, this.b, a * 220);
+      p.ellipse(0, 0, s, s);
+      // 십자 광선
+      for (var k = 0; k < 4; k++) {
+        p.push();
+        p.rotate((p.PI / 4) * k);
+        p.fill(this.r, this.g, this.b, a * 130);
+        p.ellipse(0, 0, s * 0.22, s * 2.8);
+        p.pop();
+      }
+      // 중심 흰 점
+      p.fill(255, 255, 255, a * 230);
+      p.ellipse(0, 0, s * 0.38, s * 0.38);
+
+    } else {
+      // 꽃잎 글로우
+      p.fill(this.r, this.g, this.b, a * 35);
+      p.ellipse(0, 0, s * 2.8, s * 2.8);
+      // 꽃잎 5장
+      for (var j = 0; j < 5; j++) {
+        p.push();
+        p.rotate((p.TWO_PI / 5) * j);
+        p.fill(this.r, this.g, this.b, a * 190);
+        p.ellipse(s * 0.38, 0, s * 0.45, s * 0.24);
+        p.pop();
+      }
+      // 안쪽 작은 꽃잎
+      for (var j2 = 0; j2 < 5; j2++) {
+        p.push();
+        p.rotate((p.TWO_PI / 5) * j2 + p.PI / 5);
+        p.fill(255, 250, 220, a * 150);
+        p.ellipse(s * 0.22, 0, s * 0.28, s * 0.16);
+        p.pop();
+      }
+      // 중심
+      p.fill(255, 245, 200, a * 240);
+      p.ellipse(0, 0, s * 0.32, s * 0.32);
+    }
+    p.pop();
+  };
+
+  Particle.prototype.isDead = function() {
+    return this.life >= this.maxLife;
+  };
+
+  p.setup = function() {
+    W = window.innerWidth;
+    H = window.innerHeight;
+    var c = p.createCanvas(W, H);
+    var container = document.getElementById('sleepDreamCanvas');
+    if (container) container.appendChild(c.elt);
+    p.frameRate(30);
+    for (var i = 0; i < 40; i++) particles.push(new Particle());
+  };
+
+  p.draw = function() {
+    p.clear();
+
+    // 따뜻한 빛 그라디언트 (아래→위)
+    p.noStroke();
+    for (var y = H; y > 0; y -= 4) {
+      var t = 1 - y / H;
+      p.fill(255, 200, 100, t * 18);
+      p.rect(0, y - 4, W, 4);
+    }
+
+    // 파티클
+    if (p.frameCount % 7 === 0) particles.push(new Particle());
+    for (var i = particles.length - 1; i >= 0; i--) {
+      particles[i].update();
+      particles[i].draw();
+      if (particles[i].isDead()) particles[i].reset(false);
+    }
+  };
+
+  p.windowResized = function() {
+    W = window.innerWidth;
+    H = window.innerHeight;
+    p.resizeCanvas(W, H);
+  };
+};
+
+new p5(dreamSketch, 'sleepDreamCanvas');
+
+</script>
+
+</body>
+</html>
